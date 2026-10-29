@@ -154,6 +154,17 @@ Use only on networks and hardware you own or are authorised to test. Injecting
 deauthentication or other management frames into networks you do not control is
 illegal in most jurisdictions.
 
+This repository contains **no firmware images and no decompiled firmware** —
+only patches against GPL-2.0 driver code, and standalone tools (MIT). No
+protection measure was circumvented and no firmware was modified.
+
+The firmware examination served interoperability only (understanding the
+driver/firmware interface). See [NOTICE.md](NOTICE.md) for the full statement on
+purpose, licensing, dual use and liability. Not affiliated with AICSemi, Radxa,
+UGREEN, TP-Link or any upstream driver repository.
+
+None of this is legal advice; for commercial use obtain qualified advice.
+
 ## Credits
 
 * [shenmintao/aic8800d80](https://github.com/shenmintao/aic8800d80) — maintained
