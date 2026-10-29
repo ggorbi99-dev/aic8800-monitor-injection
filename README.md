@@ -6,6 +6,11 @@ sniffer *and* a frame injector on Linux.**
 Verified working: monitor mode, radiotap injection, on both 2.4 GHz and 5 GHz.
 No firmware modification — two small patches to the out-of-tree Linux driver.
 
+> **Authorised use only.** Monitor mode and frame injection are standard,
+> documented 802.11 features and this repository exists to make a device the
+> author owns work as specified under Linux. Use it only on networks and
+> hardware you own or are authorised to test. See [NOTICE.md](NOTICE.md).
+
 ---
 
 ## TL;DR
@@ -117,12 +122,22 @@ makes `set channel` fail with `-EBUSY`), sets the channel and runs `dumpcap`.
 ```bash
 sudo ./tools/aic-inject.sh <channel> <type> [count] [mac-suffix] [bssid]
 
-sudo ./tools/aic-inject.sh 6  deauth 5
-sudo ./tools/aic-inject.sh 11 beacon 10
-sudo ./tools/aic-inject.sh 36 auth   3 ab aa:bb:cc:dd:ee:ff
+sudo ./tools/aic-inject.sh 11 beacon   10     # advertise a test BSS
+sudo ./tools/aic-inject.sh 36 probereq  5     # directed probe request
+sudo ./tools/aic-inject.sh 6  wildprobe 3     # broadcast probe request
 ```
 
-Types: `deauth`, `auth`, `disassoc`, `beacon`, `probereq`, `wildprobe`, `action`.
+Supported frame types: `beacon`, `probereq`, `wildprobe`, `action`, `auth`,
+`deauth`, `disassoc`.
+
+`deauth` and `disassoc` terminate other stations' connections. They are
+implemented for interoperability and regression testing on networks you control,
+are deliberately absent from every example above, and require an explicit
+acknowledgement before the tool will send them:
+
+```bash
+I_AM_AUTHORISED=1 sudo -E ./tools/aic-inject.sh 6 deauth 3
+```
 
 The script performs the mandatory `down → up → set channel` sequence, then sends
 raw frames through a `AF_PACKET` socket and prints the firmware's confirmation.
