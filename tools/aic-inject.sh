@@ -25,6 +25,7 @@ TYP="${2:?Typ fehlt (beacon|probereq|wildprobe|action|auth|deauth|disassoc)}"
 CNT="${3:-5}"
 MAC="${4:-01}"
 BSSID="${5:-}"
+CLIENT="${6:-}"
 
 case "$TYP" in
   deauth|disassoc)
@@ -62,7 +63,7 @@ sleep 1
 
 echo
 echo "Injiziere $CNT x $TYP auf Kanal $CH über $MON"
-python3 "$(dirname "$0")/inject-raw.py" "$MON" "$CH" "$TYP" "$CNT" "$MAC" ${BSSID:+"$BSSID"}
+python3 "$(dirname "$0")/inject-raw.py" "$MON" "$CH" "$TYP" "$CNT" "$MAC" "$BSSID" "" "$CLIENT"
 
 echo
 echo "Firmware-Rückmeldung:"

