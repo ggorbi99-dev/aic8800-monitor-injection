@@ -18,6 +18,7 @@ RATE = int(sys.argv[9], 0) if len(sys.argv) > 9 and sys.argv[9] else None   # 50
 import os
 REASON = int(os.environ.get("REASON", "7"))
 SRC_OVERRIDE = bytes.fromhex(os.environ["SRC_MAC"].replace(":","")) if os.environ.get("SRC_MAC") else None
+SEQ_BASE = int(os.environ.get("SEQ", "0"))
 
 SRC = bytes([0x02, 0x00, 0x00, 0xde, 0xad, LASTMAC])   # lokal verwaltete MAC
 
@@ -37,62 +38,62 @@ def radiotap(rate=None):
         return struct.pack("<BBHI", 0, 0, 9, 0x02) + bytes([rate & 0xff])
     return struct.pack("<BBHI", 0, 0, 8, 0)
 
-def hdr(fc0, addr1=None, addr2=None, addr3=None):
+def hdr(fc0, addr1=None, addr2=None, addr3=None, seq=0):
     """addr1 = DA, addr2 = SA, addr3 = BSSID.
     Standard: DA Broadcast, SA = unsere Test-MAC, BSSID = SA."""
     return (struct.pack("<BB", fc0, 0x00)     # Frame Control
             + struct.pack("<H", 0)            # Duration
             + (addr1 if addr1 else b"\xff" * 6)   # Addr1 DA
-            + (addr2 if addr2 else SRC)       # Addr2 SA
+            + (addr2 if addr2 else (SRC_OVERRIDE or SRC))   # Addr2 SA (ggf. ueberschrieben)
             + (addr3 if addr3 else SRC)       # Addr3 BSSID
-            + struct.pack("<H", 0))           # Sequence Control
+            + struct.pack("<H", (seq & 0xfff) << 4))   # Sequence Control
 
 BROADCAST = b"\xff" * 6
 
-def build(kind):
+def build(kind, seq=0):
     if kind == "beacon":
         fixed = struct.pack("<QHH", 0, 100, 0x0411)
         ssid = b"aic-inject-test"
         ies = bytes([0x00, len(ssid)]) + ssid + bytes([0x01, 0x01, 0x82])
-        return hdr(0x80) + fixed + ies
+        return hdr(0x80, seq=seq) + fixed + ies
     if kind == "probereq":
         ssid = SSID_ARG or b"aic-inject-test"
         ies = bytes([0x00, len(ssid)]) + ssid + bytes([0x01, 0x01, 0x82])
-        return hdr(0x40, addr3=BROADCAST) + ies
+        return hdr(0x40, addr3=BROADCAST, seq=seq) + ies
     if kind == "wildprobe":
         # Wildcard-Probe-Request: SSID-IE mit Laenge 0 -> jeder AP antwortet
         ies = bytes([0x00, 0x00]) + bytes([0x01, 0x01, 0x82])
-        return hdr(0x40, addr3=BROADCAST) + ies
+        return hdr(0x40, addr3=BROADCAST, seq=seq) + ies
     if kind == "deauth_rev":
         # Gegenrichtung: DA = AP, SA = Client ("Client meldet sich ab").
         # Der AP beendet die Session und deauth't den Client selbst.
         b = TARGET_BSSID or BROADCAST
         sa = CLIENT_MAC or SRC
-        return hdr(0xc0, addr1=b, addr2=sa, addr3=b) + struct.pack("<H", REASON)
+        return hdr(0xc0, addr1=b, addr2=sa, addr3=b, seq=seq) + struct.pack("<H", REASON)
     if kind == "deauth":
         # Deauth: DA = Ziel-Client, SA/BSSID = Access Point (gefälscht).
         # SRC_MAC erlaubt die Gegenrichtung: DA=AP, SA=Client ("Client geht").
         b = TARGET_BSSID or BROADCAST
         da = CLIENT_MAC or b
         sa = SRC_OVERRIDE or b
-        return hdr(0xc0, addr1=da, addr2=sa, addr3=b) + struct.pack("<H", REASON)
+        return hdr(0xc0, addr1=da, addr2=sa, addr3=b, seq=seq) + struct.pack("<H", REASON)
     if kind == "auth":
         # Authentication, Open System, Seq 1, Status 0 — an BSSID adressiert
         b = TARGET_BSSID or BROADCAST
-        return hdr(0xb0, addr1=b, addr3=b) + struct.pack("<HHH", 0, 1, 0)
+        return hdr(0xb0, addr1=b, addr3=b, seq=seq) + struct.pack("<HHH", 0, 1, 0)
     if kind == "disassoc":
         b = TARGET_BSSID or BROADCAST
         da = CLIENT_MAC or b
-        return hdr(0xa0, addr1=da, addr2=b, addr3=b) + struct.pack("<H", 8)
+        return hdr(0xa0, addr1=da, addr2=b, addr3=b, seq=seq) + struct.pack("<H", 8)
     if kind == "action_short":
         # 26 Bytes gesamt (24 Header + 2) — gleiche Laenge wie ein Deauth
-        return hdr(0xd0) + bytes([0x7f, 0x01])
+        return hdr(0xd0, seq=seq) + bytes([0x7f, 0x01])
     # action (0xd0): Category 127 vendor specific + OUI + Typ + Nutzlast
     body = bytes([0x7f]) + b"\xae\xe2\xae" + bytes([0x01]) + b"AICMON-INJECT-PROBE"
-    return hdr(0xd0) + body
+    return hdr(0xd0, seq=seq) + body
 
 def main():
-    frame = radiotap(RATE) + build(KIND)
+    frame = radiotap(RATE) + build(KIND, SEQ_BASE)
     s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
     s.bind((IFACE, 0))
     before = tx_packets()
@@ -103,7 +104,7 @@ def main():
              ("%d x 500kbit/s" % RATE) if RATE else "Treiber-Default"))
     print("TX-Zaehler vorher: %d" % before)
     for i in range(1, COUNT + 1):
-        s.send(frame)
+        s.send(radiotap(RATE) + build(KIND, (SEQ_BASE + i) & 0xfff))
         print("  gesendet %d/%d" % (i, COUNT))
         time.sleep(0.2)
     time.sleep(0.6)

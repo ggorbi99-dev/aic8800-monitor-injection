@@ -136,12 +136,31 @@ without it the driver falls back to 1 Mbit DSSS, which 5 GHz stations cannot
 decode. `deauth_rev` sends the de-authentication in the reverse direction
 (DA = AP, SA = client), the classic way to make an AP tear down a session.
 
-> **Field observation:** clients that implement de-authentication protection
-> (iOS, and anything with 802.11w/PMF negotiated) accept and ACK injected
-> Action frames but do **not** ACK injected Deauth/Disassoc frames — the
-> firmware reports `done=1 acked=0` and the station stays connected. That is
-> the client's protection working, not a defect in the injection path. Verify
-> against a client that does not negotiate PMF.
+> **Field observation 1 — the frames do go out.** A unicast Deauth/Disassoc is
+> transmitted and retried (8 attempts, because nothing ACKs it); the firmware
+> reports `st=0x1` for those and `st=0x9` for Action frames. Do not read the
+> status bit as "sent/not sent".
+>
+> **Field observation 2 — the sequence number matters.** With `SEQ` unset the
+> frame carries sequence control 0. Modern clients (tested: iPhone 15 Pro on
+> iOS, WPA2-PSK, AP advertises no PMF) silently ignore such frames, which looks
+> exactly like a broken injector. Reading the AP's current sequence number from
+> its beacon and sending a plausible, incrementing value changed a measured
+> baseline of **0 % ping loss into 67.5 %** on the target — a real, short
+> disconnect:
+>
+> ```bash
+> SEQ=$(tshark -i mon0 -Y "wlan.ta == <AP-BSSID> && wlan.fc.type_subtype==0x08" >       -T fields -e wlan.seq | tail -1)
+> REASON=3 SEQ=$((SEQ + 3)) python3 tools/inject-raw.py mon0 36 deauth_rev 8 aa <BSSID> "" <CLIENT> 0x0c
+> ```
+>
+> Repeated bursts within a short window were ignored afterwards — clients
+> rate-limit or blacklist de-authentication frames after the first one. Expect
+> one effective burst, not a sustained kick.
+>
+> Not PMF in this case: the AP advertised `Management Frame Protection
+> Capable: Not capable`. Neither frame length nor a spoofed sender address
+> explained the behaviour; only the sequence number did.
 
 `deauth` and `disassoc` terminate other stations' connections. They are
 implemented for interoperability and regression testing on networks you control,
