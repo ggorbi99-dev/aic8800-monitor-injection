@@ -128,7 +128,20 @@ sudo ./tools/aic-inject.sh 6  wildprobe 3     # broadcast probe request
 ```
 
 Supported frame types: `beacon`, `probereq`, `wildprobe`, `action`, `auth`,
-`deauth`, `disassoc`.
+`deauth`, `deauth_rev`, `disassoc`.
+
+Options after the count: `[mac-suffix] [bssid] [ssid] [client-mac] [rate]`.
+`rate` is in 500 kbit/s units (`0x0c` = 6 Mbit OFDM) and is required on 5 GHz —
+without it the driver falls back to 1 Mbit DSSS, which 5 GHz stations cannot
+decode. `deauth_rev` sends the de-authentication in the reverse direction
+(DA = AP, SA = client), the classic way to make an AP tear down a session.
+
+> **Field observation:** clients that implement de-authentication protection
+> (iOS, and anything with 802.11w/PMF negotiated) accept and ACK injected
+> Action frames but do **not** ACK injected Deauth/Disassoc frames — the
+> firmware reports `done=1 acked=0` and the station stays connected. That is
+> the client's protection working, not a defect in the injection path. Verify
+> against a client that does not negotiate PMF.
 
 `deauth` and `disassoc` terminate other stations' connections. They are
 implemented for interoperability and regression testing on networks you control,

