@@ -73,6 +73,7 @@ The patches target the out-of-tree driver used by Arch/CachyOS DKMS packages
 git clone --branch legacy-mcu1 https://github.com/shenmintao/aic8800d80.git
 cd aic8800d80
 git apply /path/to/patches/0001-monitor-injection-fix.patch
+git apply /path/to/patches/0003-firmware-chipdir-path.patch
 # optional, for verbose diagnostics:
 # git apply /path/to/patches/0002-debug-instrumentation.patch
 
@@ -81,20 +82,21 @@ sudo ./install.sh          # builds DKMS modules + installs firmware
 iw dev                     # expect a monitor interface
 ```
 
-### Firmware path caveat (kernel 7.x)
+### Why patch 0003 is needed (kernel 7.x)
 
 With `CONFIG_USE_FW_REQUEST=y` the loader passes the firmware name **without**
-the chip subdirectory, so the kernel looks in `/lib/firmware/` directly while
-the files live in `/lib/firmware/aic8800D80/`. Either:
+the chip subdirectory, so the kernel searches `/lib/firmware/` while the files
+live in `/lib/firmware/aic8800D80/`. Patch 0003 adds `aic_req_fw_chipdir()`,
+which prepends the chip directory (derived from `chipid`) and falls back to the
+bare name, so both layouts keep working.
+
+Without that patch, the workaround is to make the names resolvable at the
+firmware root:
 
 ```bash
-# make the names resolvable at the firmware root
 sudo sh -c 'cd /lib/firmware/aic8800D80 && for f in *; do
               [ -e "/lib/firmware/$f" ] || ln -s "aic8800D80/$f" "/lib/firmware/$f"; done'
 ```
-
-or patch the loader to prefix the subdirectory before calling `request_firmware()`
-(the cleaner fix, not yet submitted upstream).
 
 ---
 

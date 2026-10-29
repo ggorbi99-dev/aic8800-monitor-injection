@@ -1,0 +1,108 @@
+diff --git a/drivers/aic8800/aic8800_fdrv/rwnx_platform.c b/drivers/aic8800/aic8800_fdrv/rwnx_platform.c
+index da41d2b..c75e5d7 100644
+--- a/drivers/aic8800/aic8800_fdrv/rwnx_platform.c
++++ b/drivers/aic8800/aic8800_fdrv/rwnx_platform.c
+@@ -609,6 +609,40 @@ static int rwnx_plat_bin_fw_upload(struct rwnx_plat *rwnx_plat, u8* fw_addr,
+ #define MD5(x) x[0],x[1],x[2],x[3],x[4],x[5],x[6],x[7],x[8],x[9],x[10],x[11],x[12],x[13],x[14],x[15]
+ #define MD5PINRT "file md5:%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x\r\n"
+ 
++/* Firmware liegt chipweise in Unterverzeichnissen (/lib/firmware/aic8800D80/).
++ * request_firmware() sucht dagegen relativ zu /lib/firmware, deshalb muss der
++ * Chip-Unterordner vorangestellt werden. Schlaegt das fehl, wird der nackte
++ * Name versucht, damit aeltere Layouts weiter funktionieren. */
++static int aic_req_fw_chipdir(const struct firmware **fw, const char *name,
++                              struct device *device)
++{
++	char fw_name[256];
++	const char *dir = NULL;
++	int ret;
++
++#ifdef CONFIG_PLATFORM_UBUNTU
++	if (device) {
++		struct aicwf_bus *bus_if = dev_get_drvdata(device);
++		struct aic_usb_dev *usb_dev = bus_if ? bus_if->bus_priv.usb : NULL;
++		if (usb_dev) {
++			if (usb_dev->chipid == PRODUCT_ID_AIC8800)
++				dir = "aic8800";
++			else if (usb_dev->chipid == PRODUCT_ID_AIC8800D80)
++				dir = "aic8800D80";
++			else if (usb_dev->chipid == PRODUCT_ID_AIC8800D80X2)
++				dir = "aic8800D80X2";
++		}
++	}
++#endif
++	if (dir) {
++		snprintf(fw_name, sizeof(fw_name), "%s/%s", dir, name);
++		ret = request_firmware(fw, fw_name, device);
++		if (ret >= 0)
++			return ret;
++	}
++	return request_firmware(fw, name, device);
++}
++
+ static int rwnx_load_firmware(u32 **fw_buf, const char *name, struct device *device)
+ {
+ 
+@@ -623,7 +657,7 @@ static int rwnx_load_firmware(u32 **fw_buf, const char *name, struct device *dev
+ 
+ 	AICWFDBG(LOGINFO, "%s: request firmware = %s \n", __func__ ,name);
+ 
+-	ret = request_firmware(&fw, name, NULL);
++	ret = aic_req_fw_chipdir(&fw, name, device);
+ 
+ 	if (ret < 0) {
+ 		AICWFDBG(LOGERROR, "Load %s fail\n", name);
+diff --git a/drivers/aic8800/aic_load_fw/aicbluetooth.c b/drivers/aic8800/aic_load_fw/aicbluetooth.c
+index 80a8f81..cfb007c 100644
+--- a/drivers/aic8800/aic_load_fw/aicbluetooth.c
++++ b/drivers/aic8800/aic_load_fw/aicbluetooth.c
+@@ -249,6 +249,40 @@ void aic_bt_platform_deinit(struct aic_usb_dev *usbdev)
+ #define MD5(x) x[0],x[1],x[2],x[3],x[4],x[5],x[6],x[7],x[8],x[9],x[10],x[11],x[12],x[13],x[14],x[15]
+ #define MD5PINRT "file md5:%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x\r\n"
+ 
++/* Firmware liegt chipweise in Unterverzeichnissen (/lib/firmware/aic8800D80/).
++ * request_firmware() sucht dagegen relativ zu /lib/firmware, deshalb muss der
++ * Chip-Unterordner vorangestellt werden. Schlaegt das fehl, wird der nackte
++ * Name versucht, damit aeltere Layouts weiter funktionieren. */
++static int aic_req_fw_chipdir(const struct firmware **fw, const char *name,
++                              struct device *device)
++{
++	char fw_name[256];
++	const char *dir = NULL;
++	int ret;
++
++#ifdef CONFIG_PLATFORM_UBUNTU
++	if (device) {
++		struct aicwf_bus *bus_if = dev_get_drvdata(device);
++		struct aic_usb_dev *usb_dev = bus_if ? bus_if->bus_priv.usb : NULL;
++		if (usb_dev) {
++			if (usb_dev->chipid == PRODUCT_ID_AIC8800)
++				dir = "aic8800";
++			else if (usb_dev->chipid == PRODUCT_ID_AIC8800D80)
++				dir = "aic8800D80";
++			else if (usb_dev->chipid == PRODUCT_ID_AIC8800D80X2)
++				dir = "aic8800D80X2";
++		}
++	}
++#endif
++	if (dir) {
++		snprintf(fw_name, sizeof(fw_name), "%s/%s", dir, name);
++		ret = request_firmware(fw, fw_name, device);
++		if (ret >= 0)
++			return ret;
++	}
++	return request_firmware(fw, name, device);
++}
++
+ static int aic_load_firmware(u32 ** fw_buf, const char *name, struct device *device)
+ {
+ 
+@@ -264,7 +298,7 @@ static int aic_load_firmware(u32 ** fw_buf, const char *name, struct device *dev
+ 	printk("%s: request firmware = %s \n", __func__ ,name);
+ 
+ 
+-	ret = request_firmware(&fw, name, NULL);
++	ret = aic_req_fw_chipdir(&fw, name, device);
+ 	
+ 	if (ret < 0) {
+ 		printk("Load %s fail\n", name);
