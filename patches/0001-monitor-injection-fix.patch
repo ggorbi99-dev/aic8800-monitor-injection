@@ -1,0 +1,49 @@
+diff --git a/drivers/aic8800/Makefile b/drivers/aic8800/Makefile
+index 0b60909..9d1f8b0 100644
+--- a/drivers/aic8800/Makefile
++++ b/drivers/aic8800/Makefile
+@@ -7,7 +7,7 @@ obj-$(CONFIG_AIC8800_WLAN_SUPPORT) += aic8800_fdrv/
+ obj-$(CONFIG_AIC_ZLP_QUIRK)        += aic_zlp_quirk/
+ 
+ ########## config option ##########
+-export CONFIG_USE_FW_REQUEST = n
++export CONFIG_USE_FW_REQUEST = y
+ export CONFIG_PREALLOC_RX_SKB = y
+ export CONFIG_PREALLOC_TXQ = y
+ export CONFIG_WOWLAN = n
+diff --git a/drivers/aic8800/aic8800_fdrv/Makefile b/drivers/aic8800/aic8800_fdrv/Makefile
+index b2a3514..f81dee1 100644
+--- a/drivers/aic8800/aic8800_fdrv/Makefile
++++ b/drivers/aic8800/aic8800_fdrv/Makefile
+@@ -171,9 +171,9 @@ CONFIG_RWNX_RADAR ?= y
+ CONFIG_RWNX_BCMC ?= y
+ 
+ # Enable Monitor+Data interface support (need FW support)
+-CONFIG_RWNX_MON_DATA =n
++CONFIG_RWNX_MON_DATA =y
+ CONFIG_RWNX_MON_XMIT ?= y
+-CONFIG_RWNX_MON_RXFILTER ?= n
++CONFIG_RWNX_MON_RXFILTER ?= y
+ 
+ CONFIG_FILTER_TCP_ACK =y
+ 
+diff --git a/drivers/aic8800/aic8800_fdrv/rwnx_tx.c b/drivers/aic8800/aic8800_fdrv/rwnx_tx.c
+index 9030899..ec2c27c 100644
+--- a/drivers/aic8800/aic8800_fdrv/rwnx_tx.c
++++ b/drivers/aic8800/aic8800_fdrv/rwnx_tx.c
+@@ -671,10 +671,14 @@ void rwnx_tx_push(struct rwnx_hw *rwnx_hw, struct rwnx_txhdr *txhdr, int flags)
+     aicwf_frame_tx((void *)(rwnx_hw->sdiodev), skb);
+ #endif
+ #ifdef AICWF_USB_SUPPORT
+-    if( ((sw_txhdr->desc.host.flags & TXU_CNTRL_MGMT) && \
++    if( sw_txhdr->raw_frame || ((sw_txhdr->desc.host.flags & TXU_CNTRL_MGMT) && \
+ 	((*(skb->data+sw_txhdr->headroom)==0xd0) || (*(skb->data+sw_txhdr->headroom)==0x10) || (*(skb->data+sw_txhdr->headroom)==0x30))) || \
+         (sw_txhdr->desc.host.ethertype == 0x8e88) || (sw_txhdr->desc.host.ethertype == 0xb488)) {
+ 	// 0xd0:Action, 0x10:AssocRsp, 0x8e88:EAPOL, 0xb488: WAPI
++	// Frames injected from a monitor interface (raw_frame) must take the
++	// confirmation-ring path (status_desc_addr bit 31). The fixed_rate path
++	// (bit 30) is silently dropped by the AIC8800D80 firmware, which is why
++	// beacons/probe-requests never reached the air before.
+         sw_txhdr->need_cfm = 1;
+         sw_txhdr->desc.host.status_desc_addr = ((1<<31) | rwnx_hw->usb_env.txdesc_free_idx[0]);
+         aicwf_usb_host_txdesc_push(&(rwnx_hw->usb_env), 0, (long)(skb));
