@@ -158,6 +158,17 @@ decode. `deauth_rev` sends the de-authentication in the reverse direction
 > rate-limit or blacklist de-authentication frames after the first one. Expect
 > one effective burst, not a sustained kick.
 >
+> The sequence-number check appears to be client-specific. Measured on the same
+> AP (WPA2-PSK, no PMF):
+>
+> | Client | Stack | `SEQ=0` accepted | Result |
+> |---|---|---|---|
+> | iPhone 15 Pro | iOS | no | needed a real sequence number: 67.5 % ping loss |
+> | USB adapter | Linux `rtw89` + `wpa_supplicant` | **yes** | kernel logged `deauthenticated ... (Reason: 7 = CLASS3_FRAME_FROM_NONASSOC_STA)`, 8.4 s offline, then re-associated |
+>
+> So a plain `SEQ=0` burst is enough for Linux clients; it is iOS that validates
+> the sequence counter.
+>
 > Not PMF in this case: the AP advertised `Management Frame Protection
 > Capable: Not capable`. Neither frame length nor a spoofed sender address
 > explained the behaviour; only the sequence number did.
